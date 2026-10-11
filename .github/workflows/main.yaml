@@ -1,0 +1,69 @@
+name: Deploy MCP to Bedrock AgentCore
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "agentcore/**"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  MCP_NAME: portfolio-mcp
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install AgentCore CLI
+        run: |
+          npm install -g @aws/agentcore@0.24.0
+
+      - name: Build CDK
+        working-directory: agentcore/cdk
+        run: |
+          npm ci
+          npm run build
+
+      - name: Debug environment
+        run: |
+          node -v
+          npm -v
+          npx tsc --version || true
+          agentcore --version
+
+      - name: Deploy
+        run: |
+          agentcore deploy -y --verbose
+        env:
+          AWS_KNOWLEDGEBASE_ID: ${{ secrets.AWS_KNOWLEDGEBASE_ID }}
+
+      - name: Dump AgentCore logs
+        if: failure()
+        run: |
+          find agentcore/.cli/logs -type f
+          cat agentcore/.cli/logs/deploy/*.log
